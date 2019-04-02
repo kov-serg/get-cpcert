@@ -1,8 +1,7 @@
 #!/bin/sh
 
-cp engine-master/build/bin/gost.so libgost.so
-gcc -o get-cpcert -Iengine-master get-cpcert.c \
-  -Lopenssl-OpenSSL_1_1_1-stable -lssl -lcrypto \
-  -Lengine-master/build/bin -lgost_core -L. -lgost \
+cp libs/engine/build/bin/gost.so libgost.so
+gcc -o get-cpcert -Ilibs/engine get-cpcert.c \
+  -Llibs/openssl-OpenSSL_1_1_1-stable -lssl -lcrypto \
+  -Llibs/engine/build -lgost_core -L. -lgost \
   -lpthread -ldl -Xlinker '-rpath=.'
-
