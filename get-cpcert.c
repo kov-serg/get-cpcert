@@ -611,7 +611,7 @@ int get_cpcert(const char* path,const char* pass) {
   data->password=pass;
   if (extract_priv(data)) { ERROR("unable to get privkey"); rc=31; goto err; }
   if (print_cert(data,stdout)) { ERROR("print"); rc=32; goto err; }
-  OPENSSL_cleanse(data->priv,32);
+  OPENSSL_cleanse(data->priv,max_key_size);
   rc=0; err:
   return rc;
 }
