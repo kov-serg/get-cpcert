@@ -1,10 +1,11 @@
 # get-cpcert
-
+<pre>
 Console utility to convert cryptopro4 certificate (gost-2001, gost-2012) into pem file for openssl 1.1.1
-
+</pre>
 ## usage
+<pre>
 get-cpcert folder.000 password > certificate.pem
-
+</pre>
 ## build
 <pre>
 Tested on ubuntu 14.04 LTS 64bit
