@@ -18,5 +18,7 @@ build.sh -- build get-cpcert
 </pre>
 
 ## prebuild binaries
+<pre>
 get-cpcert-bin.tar.gz -- contains prebuild binaries for ubuntu 14.04 64bit and 3 samples for testing
+</pre>
   
