@@ -16,3 +16,7 @@ build.sh -- build get-cpcert
 ## output
 get-cpcert
 libgost.so
+
+## prebuild binaries
+get-cpcert-bin.tar.gz -- contains prebuild binaries for ubuntu 14.04 64bit and 3 samples for testing
+  
