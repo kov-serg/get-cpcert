@@ -174,7 +174,7 @@ static int wr_num(packet_t *res,unsigned n) {
 }
 static int wr_oid(packet_t *res,packet_t* p) {
   int x;
-  if (pkt_end(p)) return;
+  if (pkt_end(p)) return 1;
   x=pkt_get(p);
   wr_num(res,x/40);
   pkt_put(res,'.');
