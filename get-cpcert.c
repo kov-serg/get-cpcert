@@ -106,38 +106,61 @@ typedef struct {
 
 static int asn1_parse_tag(packet_t *p,
   asn1_parser_cfg_t *cfg,
-  asn1_parser_tag_t *parent)
+  asn1_parser_tag_t *parent,
+  int stream)
 {
   enum {
     ASN1_MASK_MULTI=0x20, ASN1_MASK_TYPE=0x1F,
     ASN1_MASK_CLASS=0xC0, ASN1_SHIFT_CLASS=6
   };
-  asn1_parser_tag_t tag[1];int rc;
+  asn1_parser_tag_t tag[1];packet_t ps[1];int rc;
 
   tag->index=0;
   tag->level=parent ? parent->level+1 : 0;
   while(!pkt_end(p)) {
+    if (stream) {
+      if (p->pos+1<p->size && p->data[p->pos]==0 && p->data[p->pos+1]==0) {
+        p->pos+=2; break;
+      }
+    }
     tag->tag_pos=p->pos;
     tag->tag=pkt_get(p);
     tag->tag_type=tag->tag&ASN1_MASK_TYPE;
     if (tag->tag_type==ASN1_MASK_TYPE) tag->tag_type=asn1_num(p);
     tag->tag_class=(tag->tag&ASN1_MASK_CLASS)>>ASN1_SHIFT_CLASS;
-    tag->tag_len=asn1_len(p);
-    if (tag->tag_len==0) { ERROR("streams are unsupported"); return 1; } 
-    pkt_sub(tag->body,p,tag->tag_len);
     tag->tag_composite=tag->tag&ASN1_MASK_MULTI;
-    rc=cfg->tag(cfg->tag_ctx,tag); if (rc) return rc;
-    if (tag->tag_composite) {
+    tag->tag_len=asn1_len(p);
+    if (tag->tag_len==0) { // stream
+      // https://www.w3.org/Protocols/HTTP-NG/asn1.html
+      pkt_sub(ps,p,pkt_left(p));
+      if (tag->tag_composite) rc=asn1_parse_tag(ps,cfg,tag,1); else {
+        for(rc=2;ps->pos<ps->size;) {
+          while(ps->pos<ps->size && ps->data[ps->pos]!=0) ps->pos++;
+          if (ps->pos+1<ps->size && ps->data[++ps->pos]==0) {
+            ps->pos++; rc=0; break;
+          }
+        }
+      }
+      if (rc) return rc;
+      tag->tag_len=ps->pos-p->pos-2;
       pkt_sub(tag->body,p,tag->tag_len);
-      rc=asn1_parse_tag(tag->body,cfg,tag); if (rc) return rc;
+      rc=cfg->tag(cfg->tag_ctx,tag); if (rc) return rc;
+      p->pos=ps->pos;
+    } else {
+      pkt_sub(tag->body,p,tag->tag_len);
+      rc=cfg->tag(cfg->tag_ctx,tag); if (rc) return rc;
+      if (tag->tag_composite) {
+        pkt_sub(tag->body,p,tag->tag_len);
+        rc=asn1_parse_tag(tag->body,cfg,tag,0); if (rc) return rc;
+      }
+      pkt_skip(p,tag->tag_len);
     }
-    pkt_skip(p,tag->tag_len);
     tag->index++;
   }
   return 0;
 }
 int asn1_parse(packet_t *p,asn1_parser_cfg_t *cfg) { 
-  return asn1_parse_tag(p,cfg,0); 
+  return asn1_parse_tag(p,cfg,0,0);
 }
 
 // my_data ---------------------------------------------------------------------
@@ -157,8 +180,8 @@ enum {
   ALG_GOST2012_512=3,
   ALG_MAX
 };
-enum { 
-  max_key_size=64 
+enum {
+  max_key_size=64
 };
 typedef struct {
   int alg, parts, cert_len, key_size, ecparam_id;
@@ -184,7 +207,7 @@ static int wr_oid(packet_t *res,packet_t* p) {
     pkt_put(res,'.');
     wr_num(res,x);
   }
-  return res->ovf; 
+  return res->ovf;
 }
 static int sprint_oid(char* buf,int buf_size,packet_t *oid) {
   packet_t clone[1],text[1];
@@ -351,7 +374,7 @@ static int make2012_pwd_key(char *result_key,
   init_gost2012_hash_ctx(ctx,HASH_BITS);
   gost2012_hash_block(ctx,current,HASH_SIZE);
   gost2012_finish_hash(ctx,result_key);
-  
+
   return 0;
 }
 static int make2001_pwd_key(char *result_key,
@@ -399,17 +422,17 @@ static int make2001_pwd_key(char *result_key,
   start_hash(ctx);
   hash_block(ctx,current,HASH_SIZE);
   finish_hash(ctx,result_key);
-  
+
   return 0;
 }
 BIGNUM* decode_primary_key(char *pwd_key,char *primary_key,BN_CTX *bn,int ec,
-  int key_size) 
+  int key_size)
 {
-  gost_ctx ctx[1]; char buf[max_key_size]; 
+  gost_ctx ctx[1]; char buf[max_key_size];
 
   gost_init(ctx,ec
     ?&Gost28147_TC26ParamSetZ
-    :&Gost28147_CryptoProParamSetA  
+    :&Gost28147_CryptoProParamSetA
   );
   gost_key(ctx,pwd_key);
   gost_dec(ctx,primary_key,buf,key_size/8);
@@ -425,10 +448,10 @@ int gost_compute_public(EC_KEY *ec) {
 
     group=EC_KEY_get0_group(ec);                                                if (!group) { ERROR("no ec group"); rc=1; goto err; }
     ctx=BN_CTX_new();                                                           if (!ctx) { ERROR("no bn_ctx"); rc=2; goto err; }
-    priv_key=EC_KEY_get0_private_key(ec);                                       if (!priv_key) { ERROR("no pk"); rc=3; goto err; } 
+    priv_key=EC_KEY_get0_private_key(ec);                                       if (!priv_key) { ERROR("no pk"); rc=3; goto err; }
     pub_key=EC_POINT_new(group);                                                if (!pub_key) { ERROR("no pub key"); rc=4; goto err; }
-    res=EC_POINT_mul(group,pub_key,priv_key,0,0,ctx);                           if (!res) { ERROR("ec mul\n"); rc=5; goto err; }   
-    res=EC_KEY_set_public_key(ec,pub_key);                                      if (!res) { ERROR("set pub key");rc=6; goto err; }   
+    res=EC_POINT_mul(group,pub_key,priv_key,0,0,ctx);                           if (!res) { ERROR("ec mul\n"); rc=5; goto err; }
+    res=EC_KEY_set_public_key(ec,pub_key);                                      if (!res) { ERROR("set pub key");rc=6; goto err; }
     rc=0; err:
     EC_POINT_free(pub_key);
     BN_CTX_free(ctx);
@@ -442,7 +465,7 @@ BIGNUM* remove_mask_and_check_public(BIGNUM *key_with_mask, BIGNUM *mask,
   char buf[max_key_size], pub[max_key_size]; int res,rc;
   EC_KEY *eckey=0;
 
-  order=BN_CTX_get(ctx); mask_inv=BN_CTX_get(ctx); 
+  order=BN_CTX_get(ctx); mask_inv=BN_CTX_get(ctx);
   raw_secret=BN_CTX_get(ctx); x=BN_CTX_get(ctx); y=BN_CTX_get(ctx);
   eckey=EC_KEY_new();                                                           if (!eckey) { ERROR("ec new key"); rc=7; goto err; }
   res=fill_GOST_EC_params(eckey,ecparam_id);                                    if (!res) { ERROR("set ec param"); rc=8; goto err; }
@@ -463,7 +486,7 @@ BIGNUM* remove_mask_and_check_public(BIGNUM *key_with_mask, BIGNUM *mask,
 static int extract_priv(my_data_t *data) {
   char pwd_key[max_key_size], buf[max_key_size]; int rc, ec=0;
   BN_CTX *ctx; BIGNUM *key_with_mask, *mask, *raw_key;
-  
+
   ctx=BN_CTX_new(); BN_CTX_start(ctx);
   mask=BN_CTX_get(ctx);
   data->key_size=32;
@@ -512,7 +535,7 @@ enum { apk2012_256_key=40, apk2012_256_size=72 };
 static unsigned char apk2012_256[apk2012_256_size] = {
   /*00*/  0x30,70,
   /*02*/    2,1,0, // Integer(0)
-  /*05*/    0x30,31, 
+  /*05*/    0x30,31,
   /*07*/      6,8, 0x2A,0x85,3, 7,1,1,1,1, // GOST R 34.10-2012 with 256 bit modulus    1.2.643.7.1.1.1.1
   /*17*/      0x30,19,
   /*19*/        6,7, 42,0x85,3, 2,2,36,0,  // id-GostR3410-2001-CryptoPro-XchA-ParamSet 1.2.643.2.2.54.0
@@ -526,7 +549,7 @@ enum { apk2012_512_key=32, apk2012_512_size=96 };
 static unsigned char apk2012_512[apk2012_512_size] = {
   /*00*/  0x30,94,
   /*02*/    2,1,0, // Integer(0)
-  /*05*/    0x30,23, 
+  /*05*/    0x30,23,
   /*07*/      6,8, 42,0x85,3, 7,1,1,1,2,    // GOST R 34.10-2012 with 512 bit modulus   1.2.643.7.1.1.1.2
   /*17*/      0x30,11,
   /*19*/        6,9, 42,0x85,3, 7,1,2,1,2,1,// GOST R 34.10-2012 (512 bit) ParamSet A   1.2.643.7.1.2.1.2.1
@@ -574,7 +597,7 @@ int get_cpcert(const char* path,const char* pass) {
   asn1_parser_cfg_t cfg[1];
   my_data_t data[1]; int rc;
   enum { max_fn=2048 }; char fn[max_fn];
-  
+
   memset(data,0,sizeof(*data));
   data->key_size=32;
   data->trace_ctx=0;
