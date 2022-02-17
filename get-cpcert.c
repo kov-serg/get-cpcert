@@ -592,6 +592,7 @@ static void dbg_trace(void* ctx,const char* fmt,...) {
 }
 int get_cpcert(const char* path,const char* pass) {
   enum { buf_size=8192, buf1_size=128, buf2_size=128 };
+  enum { crop_files=1 };
   unsigned char buf[buf_size], buf1[buf1_size], buf2[buf2_size];
   packet_t header[1], masks[1], primary[1];
   asn1_parser_cfg_t cfg[1];
@@ -620,6 +621,7 @@ int get_cpcert(const char* path,const char* pass) {
   data->trace(data->trace_ctx,"[%s]\n",fn);
   #endif
   if (pkt_readfile(primary,fn)) { ERROR("read primary"); rc=27; goto err; }
+  if (crop_files && primary->size>36) primary->size=36;
   if (asn1_parse(primary,cfg)) { ERROR("parse primary"); rc=28; goto err; }
 
   cfg->tag=masks_handler;
@@ -629,6 +631,7 @@ int get_cpcert(const char* path,const char* pass) {
   data->trace(data->trace_ctx,"[%s]\n",fn);
   #endif
   if (pkt_readfile(masks,fn)) { ERROR("read masks"); rc=29; goto err; }
+  if (crop_files && masks->size>56) masks->size=56;
   if (asn1_parse(masks,cfg)) { ERROR("parse masks"); rc=30; goto err; }
 
   data->password=pass;
