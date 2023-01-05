@@ -111,7 +111,8 @@ static int asn1_parse_tag(packet_t *p,
 {
   enum {
     ASN1_MASK_MULTI=0x20, ASN1_MASK_TYPE=0x1F,
-    ASN1_MASK_CLASS=0xC0, ASN1_SHIFT_CLASS=6
+    ASN1_MASK_CLASS=0xC0, ASN1_SHIFT_CLASS=6,
+    ASN1_TYPE_NULL=5, ASN1_CLASS_UNIVERSAL=0
   };
   asn1_parser_tag_t tag[1];packet_t ps[1];int rc;
 
@@ -130,7 +131,9 @@ static int asn1_parse_tag(packet_t *p,
     tag->tag_class=(tag->tag&ASN1_MASK_CLASS)>>ASN1_SHIFT_CLASS;
     tag->tag_composite=tag->tag&ASN1_MASK_MULTI;
     tag->tag_len=asn1_len(p);
-    if (tag->tag_len==0) { // stream
+    if (tag->tag_len==0 &&
+      !(tag->tag_type==ASN1_TYPE_NULL && tag->tag_class==ASN1_CLASS_UNIVERSAL)) 
+    { // stream and not NULL
       // https://www.w3.org/Protocols/HTTP-NG/asn1.html
       pkt_sub(ps,p,pkt_left(p));
       if (tag->tag_composite) rc=asn1_parse_tag(ps,cfg,tag,1); else {
