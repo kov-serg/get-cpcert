@@ -13,7 +13,7 @@ wget -O libs/cmake-3.14.0.tar.gz -c https://github.com/Kitware/CMake/releases/do
 }
 
 function prereq() {
-sudo apt-get install make pkg-config autoconf build-essential
+sudo apt-get update && sudo apt-get install -y make pkg-config autoconf build-essential wget unzip
 }
 
 function unpack() {
